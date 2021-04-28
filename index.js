@@ -1,28 +1,48 @@
 require('dotenv').config()
 
-const fs = require('fs/promises')
 const express = require('express')
-const msal = require('@azure/msal-node')
-const isAfter = require('date-fns/isAfter')
+
 const SERVER_PORT = process.env.PORT || 3000
-const REDIRECT_URI = 'http://localhost:3000/redirect'
 
 const auth = require('./auth')
 const fetch = require('./fetch')
+const { getGraphToken, graphTokenRequest, getExposedToken, exposedTokenRequest } = require('./auth')
 
 // Create Express App and Routes
 const app = express()
 
+const apiConfig = {
+  graphUsers: process.env.GRAPH_ENDPOINT + 'v1.0/users',
+  clientUsers: process.env.GRAPH_ENDPOINT + 'v1.0/users',
+  links: 'https://wafassignmentlinks.azurewebsites.net/api/5',
+}
+
 app.get('/', async (req, res) => {
   try {
-    const authResponse = await auth.getToken(auth.tokenRequest)
+    // const graphUsers = fetch.callWithToken(
+    //   auth.getGraphToken,
+    //   auth.graphTokenRequest,
+    //   apiConfig.graphUsers
+    // )
+    // const clientUsers = fetch.callWithToken(
+    //   auth.getClientToken,
+    //   auth.clientTokenRequest,
+    //   apiConfig.clientUsers
+    // )
+    const links = fetch.callWithToken(
+      auth.getExposedToken,
+      auth.exposedTokenRequest,
+      apiConfig.links
+    )
 
-    const users = await fetch.callApi({
-      endpoint: auth.apiConfig.users,
-      accessToken: authResponse.accessToken,
-      headers: { 'Content-Type': 'application/json' },
-    })
-    console.log('users: ', users)
+    const results = await Promise.all([
+      // graphUsers, clientUsers,
+      links,
+    ])
+
+    console.log('results: ', results)
+
+    res.send(results)
   } catch (error) {
     console.log('error: ', error)
     res.status(500).send(error)

@@ -1,113 +1,87 @@
+const querystring = require('querystring')
 const msal = require('@azure/msal-node')
+const fetch = require('cross-fetch')
+const { readBody } = require('./fetch')
 
-/**
- * Configuration object to be passed to MSAL instance on creation.
- * For a full list of MSAL Node configuration parameters, visit:
- * https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/dev/lib/msal-node/docs/configuration.md
- */
-const msalConfig = {
+const { pipeline } = require('stream')
+const { promisify } = require('util')
+
+// const graphConfig = makeConfig(process.env.CLIENT_ID, process.env.CLIENT_SECRET)
+// const clientConfig = makeConfig(process.env.CLIENT_ID, process.env.CLIENT_SECRET)
+
+// const graphTokenRequest = tokenRequest(process.env.GRAPH_ENDPOINT + DEFAULT_SCOPE)
+// const clientTokenRequest = tokenRequest(process.env.CLIENT_ENDPOINT + DEFAULT_SCOPE)
+// const graphApp = new msal.ConfidentialClientApplication(graphConfig)
+// const clientApp = new msal.ConfidentialClientApplication(clientConfig)
+// const getGraphToken = getToken(graphApp)
+// const getClientToken = getToken(clientApp)
+// graphTokenRequest: graphTokenRequest,
+// clientTokenRequest: clientTokenRequest,
+// getGraphToken: getGraphToken,
+// getClientToken: getClientToken,
+
+const DEFAULT_SCOPE = '.default'
+
+const makeConfig = (clientId, clientSecret) => ({
   auth: {
-    clientId: process.env.CLIENT_ID,
+    clientId,
     authority: process.env.AAD_ENDPOINT + process.env.TENANT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
+    clientSecret,
   },
+  system: {
+    loggerOptions: {
+      loggerCallback(loglevel, message, containsPii) {
+        console.log(message)
+      },
+      piiLoggingEnabled: false,
+      logLevel: msal.LogLevel.Verbose,
+    },
+  },
+})
+
+const tokenRequest = (scope) => ({ scopes: [scope] })
+
+const exposedConfig = makeConfig(process.env.EXPOSED_CLIENT_ID, process.env.EXPOSED_CLIENT_SECRET)
+
+const exposedTokenRequest = tokenRequest(process.env.EXPOSED_CLIENT_ENDPOINT + DEFAULT_SCOPE)
+
+const exposedApp = new msal.ConfidentialClientApplication(exposedConfig)
+
+const getToken = (app) => async (tokenRequest) => {
+  return await app.acquireTokenByClientCredential(tokenRequest)
 }
 
-/**
- * With client credentials flows permissions need to be granted in the portal by a tenant administrator.
- * The scope is always in the format '<resource>/.default'. For more, visit:
- * https://docs.microsoft.com/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow
- */
-const tokenRequest = {
-  scopes: [
-    process.env.GRAPH_ENDPOINT + '.default',
-    'api://094dd3ec-f54c-41c8-be4b-d7405110e0f6' + './default',
-    // 'api://434411eb-9ba1-42a3-8bce-c3055d816197' + '/.default'
-  ],
+const getAccessToken = async () => {
+  try {
+    const response = await fetch(process.env.AAD_ENDPOINT + process.env.TENANT_ID, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: JSON.stringify({
+        grant_type: 'client_credentials',
+        client_id: process.env.EXPOSED_CLIENT_ID,
+        scopes: [process.env.EXPOSED_CLIENT_ENDPOINT + DEFAULT_SCOPE],
+        client_secret: process.env.EXPOSED_CLIENT_SECRET,
+        resource: process.env.EXPOSED_CLIENT_ENDPOINT,
+      }),
+    })
+
+    const result = await readBody(response.body)
+
+    console.log('result: ', result)
+
+    return result
+  } catch (error) {
+    console.log('error getting acces token: ', error)
+    throw new Error('access error')
+  }
 }
 
-const apiConfig = {
-  users: process.env.GRAPH_ENDPOINT + 'v1.0/users',
-}
-
-/**
- * Initialize a confidential client application. For more info, visit:
- * https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/dev/lib/msal-node/docs/initialize-confidential-client-application.md
- */
-const cca = new msal.ConfidentialClientApplication(msalConfig)
-
-/**
- * Acquires token with client credentials.
- * @param {object} tokenRequest
- */
-async function getToken(tokenRequest) {
-  return await cca.acquireTokenByClientCredential(tokenRequest)
-}
+const getExposedToken = getToken(exposedApp)
 
 module.exports = {
-  apiConfig: apiConfig,
-  tokenRequest: tokenRequest,
-  getToken: getToken,
+  exposedTokenRequest: exposedTokenRequest,
+  getAccessToken: getAccessToken,
+  getExposedToken: getExposedToken,
 }
-
-// const config = {
-//   auth: {
-//     clientId: process.env.CLIENT_ID,
-//     authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
-//     clientSecret: process.env.CLIENT_SECRET,
-//   },
-//   system: {
-//     loggerOptions: {
-//       loggerCallback(loglevel, message, containsPii) {
-//         console.log(message)
-//       },
-//       piiLoggingEnabled: false,
-//       logLevel: msal.LogLevel.Verbose,
-//     },
-//   },
-// }
-
-// // Create msal application object
-// const pca = new msal.ConfidentialClientApplication(config)
-
-// const authCodeUrlParameters = {
-//   scopes: ['Files.ReadWrite.All'],
-//   redirectUri: process.env.REDIRECT_URI,
-// }
-
-// async function getAuthCodeUrl(req, res) {
-//   try {
-//     const authCodeUrl = await pca.getAuthCodeUrl(authCodeUrlParameters)
-
-//     res.redirect(authCodeUrl)
-//   } catch (error) {
-//     console.log(JSON.stringify(error))
-//     return error
-//   }
-// }
-
-// async function getToken(req, res) {
-//   try {
-//     const tokenRequest = {
-//       code: req.query.code,
-//       scopes: [''],
-//       redirectUri: process.env.REDIRECT_URI,
-//     }
-
-//     const tokenResponse = await pca.acquireTokenByCode(tokenRequest)
-
-//     console.log('\nResponse: \n:', tokenResponse)
-
-//     await fs.writeFile('token.json', tokenResponse)
-
-//     res.sendStatus(200)
-//   } catch (error) {
-//     console.log(error)
-//     return error
-//   }
-// }
-
-// module.exports = {
-//   getAuthCodeUrl,
-//   getToken,
-// }

@@ -20,27 +20,56 @@ async function callApi({ endpoint, accessToken, headers = null, options = null }
       })
     )
 
-    const body = await res.json()
-
-    if (res.ok) {
-      return res.body
-    } else {
-      console.log('error fetching api')
-      console.log('status: ', res.status)
-      console.log('statusText: ', res.statusText)
-      console.log('message: ', body)
-      return {
-        status: res.status,
-        statusText: res.statusText,
-        body,
-      }
-    }
+    return res
   } catch (error) {
     console.log(error)
     return error
   }
 }
 
+const readBody = async (body) => {
+  let error
+  body.on('error', (err) => {
+    error = err
+  })
+
+  for await (const chunk of body) {
+    console.dir(JSON.parse(chunk.toString()))
+  }
+
+  return new Promise((resolve, reject) => {
+    body.on('close', () => {
+      error ? reject(error) : resolve()
+    })
+  })
+}
+
+const callWithToken = async (getToken, tokenRequest, endpoint) => {
+  const token = await getToken(tokenRequest)
+
+  const res = await callApi({
+    endpoint,
+    accessToken: token.accessToken,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-functions-key': 'GDLaF2cmLRhTCG6s/hQpeZUNW7RCFNNI5A0T106fw9sfgi6Ly/6DlQ==',
+    },
+  })
+
+  console.log(res.headers.raw())
+  console.log(res.headers.get('content-type'))
+
+  if (!res.ok) throw new Error(`unexpected response ${res.statusText}`)
+
+  const body = await readBody(res.body)
+
+  console.log('body: ', body)
+
+  return body
+}
+
 module.exports = {
   callApi: callApi,
+  callWithToken: callWithToken,
+  readBody: readBody,
 }
